@@ -21,9 +21,13 @@ def test_fetch_alpaca_data():
     lambda_function.fetch_alpaca_data("key", "secret", "symbol", "start", "end")
 
 
-def test_read_s3_data():
-    # The function body is currently empty, so we can pass None for the client.
-    lambda_function.read_s3_data(None, "bucket", "key")
+def test_read_s3_data_local_case():
+    # Test case when s3_client is None (local execution)
+    df = lambda_function.read_s3_data(None, "test_bucket", "test_key")
+    assert isinstance(df, pd.DataFrame)
+    assert df.empty
+    assert list(df.columns) == ["open", "high", "low", "close", "volume"]
+    assert df.index.name == "timestamp"
 
 
 def test_write_s3_data():

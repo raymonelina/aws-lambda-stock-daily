@@ -2,6 +2,8 @@ import json
 import logging
 import os
 import boto3
+import pandas as pd
+
 from datetime import datetime, timedelta
 
 # Configure logging
@@ -58,7 +60,27 @@ def fetch_alpaca_data(api_key, secret_key, symbol, start_date, end_date):
 
 
 def read_s3_data(s3_client, bucket_name, key):
-    logger.info("read_s3_data started.")
+    """Reads existing CSV data from S3. If s3_client is None, it's a local test, so return an empty DataFrame."""
+    if s3_client is None:
+        # Local testing: return an empty DataFrame with expected columns
+        logger.info("Running locally, returning empty DataFrame for S3 data.")
+        return pd.DataFrame(
+            columns=["open", "high", "low", "close", "volume"],
+            index=pd.Index([], name="timestamp"),
+        )
+
+    try:
+        obj = s3_client.get_object(Bucket=bucket_name, Key=key)
+        df = pd.read_csv(obj["Body"], index_col="timestamp", parse_dates=True)
+        return df
+    except s3_client.exceptions.NoSuchKey:
+        logger.info(
+            f"No existing data found for {key} in {bucket_name}. Starting fresh."
+        )
+        return pd.DataFrame()
+    except Exception as e:
+        logger.error(f"Error reading S3 data for {key}: {e}")
+        return pd.DataFrame()
 
 
 def write_s3_data(s3_client, df, bucket_name, key):
