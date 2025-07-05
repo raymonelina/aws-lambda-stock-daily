@@ -117,7 +117,7 @@ def write_s3_data(s3_client, df, bucket_name, key):
         print(f"Bucket: {bucket_name}")
         print(f"Key: {key}")
         print("DataFrame Content:")
-        print(df.to_csv(index=False))  # Print as CSV for readability
+        print(df.tail(5).to_csv(index=True))  # Print as CSV for readability
         return
 
     try:
@@ -190,9 +190,14 @@ def lambda_handler(event, context):
             continue
 
         # 3. Merge, deduplicate, and sort
-        print(existing_data)
-        print(new_data)
         merged_data = merge_data(existing_data, new_data)
+
+        # 4. Write updated data back to S3
+        try:
+            write_s3_data(s3_client, merged_data, s3_bucket_name, s3_key)
+            logger.info(f"Successfully updated data for {symbol}.")
+        except Exception as e:
+            logger.error(f"Failed to write updated data for {symbol}: {e}")
 
     logger.info("Lambda function finished.")
     return {"statusCode": 200, "body": "Stock data processing complete."}
