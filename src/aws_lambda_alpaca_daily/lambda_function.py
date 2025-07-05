@@ -5,6 +5,9 @@ import boto3
 import pandas as pd
 
 from datetime import datetime, timedelta
+from alpaca.data.requests import StockBarsRequest
+from alpaca.data.timeframe import TimeFrame
+from alpaca.data.historical import StockHistoricalDataClient
 
 # Configure logging
 logger = logging.getLogger()
@@ -56,7 +59,28 @@ def load_config(config_path="config/config.json"):
 
 
 def fetch_alpaca_data(api_key, secret_key, symbol, start_date, end_date):
-    logger.info("fetch_alpaca_data started.")
+    """Fetches historical stock data from Alpaca API."""
+    try:
+        data_client = StockHistoricalDataClient(api_key, secret_key)
+        request_params = StockBarsRequest(
+            symbol_or_symbols=[symbol],
+            timeframe=TimeFrame.Day,
+            start=start_date,
+            end=end_date,
+        )
+        bars = data_client.get_stock_bars(request_params)
+
+        if bars and bars.data and symbol in bars.data:
+            df = bars.df.loc[symbol]
+            # Alpaca returns data with timezone, convert to naive datetime for consistency
+            df.index = df.index.tz_localize(None)
+            df = df[["open", "high", "low", "close", "volume"]]
+            df.index.name = "timestamp"
+            return df
+        return pd.DataFrame()
+    except Exception as e:
+        logger.error(f"Error fetching Alpaca data for {symbol}: {e}")
+        return pd.DataFrame()
 
 
 def read_s3_data(s3_client, bucket_name, key):
@@ -108,7 +132,15 @@ def write_s3_data(s3_client, df, bucket_name, key):
 
 
 def merge_data(existing_df, new_df):
-    logger.info("merge_data started.")
+    """Merges new data with existing data, deduplicates, and sorts."""
+    if existing_df.empty:
+        return new_df.sort_index()
+    if new_df.empty:
+        return existing_df.sort_index()
+
+    combined_df = pd.concat([existing_df, new_df])
+    combined_df = combined_df[~combined_df.index.duplicated(keep="last")]
+    return combined_df.sort_index()
 
 
 def lambda_handler(event, context):
@@ -130,6 +162,12 @@ def lambda_handler(event, context):
         logger.critical(f"Failed to retrieve Alpaca API credentials: {e}")
         return {"statusCode": 500, "body": "Failed to retrieve API credentials."}
 
+    s3_client = (
+        None
+        if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") is None
+        else boto3.client("s3")
+    )
+
     end_date = datetime.now().date()
     start_date = end_date - timedelta(days=days_to_fetch)
 
@@ -137,6 +175,26 @@ def lambda_handler(event, context):
         logger.info(f"Processing stock: {symbol}")
         s3_key = f"{symbol}.csv"
 
+        # 1. Read existing data from S3
+        existing_data = read_s3_data(s3_client, s3_bucket_name, s3_key)
+
+        # 2. Fetch new data from Alpaca
+        new_data = fetch_alpaca_data(
+            alpaca_api_key, alpaca_secret_key, symbol, start_date, end_date
+        )
+
+        if new_data.empty:
+            logger.warning(
+                f"No new data fetched for {symbol}. Skipping merge and write."
+            )
+            continue
+
+        # 3. Merge, deduplicate, and sort
+        print(existing_data)
+        print(new_data)
+        merged_data = merge_data(existing_data, new_data)
+
+    logger.info("Lambda function finished.")
     return {"statusCode": 200, "body": "Stock data processing complete."}
 
 

@@ -68,10 +68,121 @@ def test_write_s3_data_aws_case():
     assert body == expected_csv
 
 
-def test_merge_data():
-    df1 = pd.DataFrame({"col1": [1, 2]})
-    df2 = pd.DataFrame({"col1": [3, 4]})
-    lambda_function.merge_data(df1, df2)
+# --- Test merge_data ---
+def test_merge_data_new_empty_existing_full():
+    existing_df = pd.DataFrame(
+        {
+            "open": [100.0],
+            "high": [101.0],
+            "low": [99.0],
+            "close": [100.5],
+            "volume": [1000],
+        },
+        index=pd.to_datetime(["2023-01-01"]),
+    )
+    existing_df.index.name = "timestamp"
+    new_df = pd.DataFrame()
+    merged_df = lambda_function.merge_data(existing_df, new_df)
+    pd.testing.assert_frame_equal(merged_df, existing_df)
+
+
+def test_merge_data_existing_empty_new_full():
+    existing_df = pd.DataFrame()
+    new_df = pd.DataFrame(
+        {
+            "open": [100.0],
+            "high": [101.0],
+            "low": [99.0],
+            "close": [100.5],
+            "volume": [1000],
+        },
+        index=pd.to_datetime(["2023-01-01"]),
+    )
+    new_df.index.name = "timestamp"
+    merged_df = lambda_function.merge_data(existing_df, new_df)
+    pd.testing.assert_frame_equal(merged_df, new_df)
+
+
+def test_merge_data_with_overlap():
+    existing_df = pd.DataFrame(
+        {
+            "open": [100.0, 102.0],
+            "high": [101.0, 103.0],
+            "low": [99.0, 101.5],
+            "close": [100.5, 102.5],
+            "volume": [1000, 1100],
+        },
+        index=pd.to_datetime(["2023-01-01", "2023-01-02"]),
+    )
+    existing_df.index.name = "timestamp"
+
+    new_df = pd.DataFrame(
+        {
+            "open": [102.0, 104.0],
+            "high": [103.0, 105.0],
+            "low": [101.5, 103.5],
+            "close": [102.5, 104.5],
+            "volume": [1100, 1200],
+        },
+        index=pd.to_datetime(["2023-01-02", "2023-01-03"]),
+    )
+    new_df.index.name = "timestamp"
+
+    expected_df = pd.DataFrame(
+        {
+            "open": [100.0, 102.0, 104.0],
+            "high": [101.0, 103.0, 105.0],
+            "low": [99.0, 101.5, 103.5],
+            "close": [100.5, 102.5, 104.5],
+            "volume": [1000, 1100, 1200],
+        },
+        index=pd.to_datetime(["2023-01-01", "2023-01-02", "2023-01-03"]),
+    )
+    expected_df.index.name = "timestamp"
+
+    merged_df = lambda_function.merge_data(existing_df, new_df)
+    pd.testing.assert_frame_equal(merged_df, expected_df)
+
+
+def test_merge_data_no_overlap():
+    existing_df = pd.DataFrame(
+        {
+            "open": [100.0],
+            "high": [101.0],
+            "low": [99.0],
+            "close": [100.5],
+            "volume": [1000],
+        },
+        index=pd.to_datetime(["2023-01-01"]),
+    )
+    existing_df.index.name = "timestamp"
+
+    new_df = pd.DataFrame(
+        {
+            "open": [102.0],
+            "high": [103.0],
+            "low": [101.5],
+            "close": [102.5],
+            "volume": [1100],
+        },
+        index=pd.to_datetime(["2023-01-02"]),
+    )
+    new_df.index.name = "timestamp"
+
+    expected_df = pd.DataFrame(
+        {
+            "open": [100.0, 102.0],
+            "high": [101.0, 103.0],
+            "low": [99.0, 101.5],
+            "close": [100.5, 102.5],
+            "volume": [1000, 1100],
+        },
+        index=pd.to_datetime(["2023-01-01", "2023-01-02"]),
+    )
+    expected_df.index.name = "timestamp"
+
+    merged_df = lambda_function.merge_data(existing_df, new_df)
+    pd.testing.assert_frame_equal(merged_df, expected_df)
 
 
 def test_lambda_handler():
