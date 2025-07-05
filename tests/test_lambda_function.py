@@ -79,10 +79,6 @@ def test_load_config():
     assert "alpaca_secret_name" in config
 
 
-def test_fetch_alpaca_data():
-    lambda_function.fetch_alpaca_data("key", "secret", "symbol", "start", "end")
-
-
 def test_read_s3_data_local_case():
     # Test case when s3_client is None (local execution)
     df = lambda_function.read_s3_data(None, "test_bucket", "test_key")

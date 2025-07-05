@@ -73,7 +73,7 @@ def fetch_alpaca_data(api_key, secret_key, symbol, start_date, end_date):
         if bars and bars.data and symbol in bars.data:
             df = bars.df.loc[symbol]
             # Alpaca returns data with timezone, convert to naive datetime for consistency
-            df.index = df.index.tz_localize(None)
+            df.index = df.index.tz_convert("UTC")
             df = df[["open", "high", "low", "close", "volume"]]
             df.index.name = "timestamp"
             return df
