@@ -4,11 +4,17 @@ from aws_lambda_alpaca_daily import lambda_function
 
 
 def test_get_secret():
-    lambda_function.get_secret("test_secret")
+    secrets = lambda_function.get_secret("test_secret")
+    assert "ALPACA_API_KEY_ID" in secrets
+    assert "ALPACA_API_SECRET_KEY" in secrets
 
 
 def test_load_config():
-    lambda_function.load_config()
+    config = lambda_function.load_config()
+    assert "s3_bucket_name" in config
+    assert "stocks" in config
+    assert "days_to_fetch" in config
+    assert "alpaca_secret_name" in config
 
 
 def test_fetch_alpaca_data():

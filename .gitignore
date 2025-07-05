@@ -1,10 +1,36 @@
-# Python-generated files
+# Byte-code files
+*.pyc
 __pycache__/
-*.py[oc]
+.pytest_cache/
+
+# Virtual environment
+.venv/
+env/
+venv/
+*/.venv/
+*/env/
+*/venv/
+
+# Distribution / packaging
+.Python
 build/
 dist/
-wheels/
-*.egg-info
+*.egg-info/
+*.egg
 
-# Virtual environments
-.venv
+# Editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS generated files
+.DS_Store
+.Trashes
+Thumbs.db
+
+# uv specific
+uv.lock
+
+# Local secrets
+*.secrets
