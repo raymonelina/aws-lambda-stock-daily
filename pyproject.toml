@@ -1,0 +1,27 @@
+[project]
+name = "aws-lambda-stock-daily"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "alpaca-py>=0.42.0",
+    "pandas>=2.3.0",
+    "pytest>=8.4.1",
+]
+
+[dependency-groups]
+test = [
+    "pytest>=8.4.1",
+]
+dev = [
+    "black",
+]
+
+# By adding src to the pythonpath, we allow pytest to discover and import
+# modules from the src/ directory directly. This is the standard configuration
+# for projects that use the "src layout".
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+python_functions = ["test_*"]
