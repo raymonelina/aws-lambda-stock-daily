@@ -83,11 +83,29 @@ def fetch_alpaca_data(api_key, secret_key, symbol, start_date, end_date):
         return pd.DataFrame()
 
 
+def _get_local_file_path(key):
+    local_dir = "local_bucket"
+    os.makedirs(local_dir, exist_ok=True)
+    return os.path.join(local_dir, key)
+
+
 def read_s3_data(s3_client, bucket_name, key):
-    """Reads existing CSV data from S3. If s3_client is None, it's a local test, so return an empty DataFrame."""
+    """Reads existing CSV data from S3 or a local file. If s3_client is None, it tries to read from a local file first."""
     if s3_client is None:
-        # Local testing: return an empty DataFrame with expected columns
-        logger.info("Running locally, returning empty DataFrame for S3 data.")
+        # Local testing: try to read from local_bucket/key first
+        local_file_path = _get_local_file_path(key)
+        if os.path.exists(local_file_path):
+            try:
+                df = pd.read_csv(
+                    local_file_path, index_col="timestamp", parse_dates=True
+                )
+                logger.info(f"Local: Data read from {local_file_path}")
+                return df
+            except Exception as e:
+                logger.error(f"Local: Error reading data from {local_file_path}: {e}")
+        logger.info(
+            "Local: No existing data found or error reading local file. Returning empty DataFrame."
+        )
         return pd.DataFrame(
             columns=["open", "high", "low", "close", "volume"],
             index=pd.Index([], name="timestamp"),
@@ -108,16 +126,25 @@ def read_s3_data(s3_client, bucket_name, key):
 
 
 def write_s3_data(s3_client, df, bucket_name, key):
-    """Writes DataFrame to S3 or prints to console if s3_client is None."""
+    """Writes DataFrame to S3, local file, or prints to console based on s3_client."""
     if s3_client is None:
-        # Local testing: print DataFrame, bucket_name, and key to console
+        # Local testing: write DataFrame to a local file and print tail to console
+        local_file_path = _get_local_file_path(key)
+
+        try:
+            # Write DataFrame to CSV with specified format
+            df.to_csv(local_file_path, float_format="%.4f", index_label="timestamp")
+            logger.info(f"Local: Data written to {local_file_path}")  # More concise log
+        except Exception as e:
+            logger.error(f"Local: Error writing data to {local_file_path}: {e}")
+
         logger.info(
-            f"Running locally, simulating S3 write for s3://{bucket_name}/{key}. Data:"
+            f"Local: Simulating S3 write for s3://{bucket_name}/{key}. Data tail (5 rows) printed below."
         )
         print(f"Bucket: {bucket_name}")
         print(f"Key: {key}")
-        print("DataFrame Content:")
-        print(df.tail(5).to_csv(index=True))  # Print as CSV for readability
+        print("DataFrame Content Tail (5 rows):")
+        print(df.tail(5).to_csv(index=True))  # Print tail as CSV for readability
         return
 
     try:

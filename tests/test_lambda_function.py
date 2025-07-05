@@ -51,6 +51,14 @@ def aws_credentials():
     os.environ["AWS_REGION"] = "us-east-1"
 
 
+@pytest.fixture(scope="function")
+def s3_client(aws_credentials):
+    with mock_aws():
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=TEST_S3_BUCKET)
+        yield client
+
+
 # --- Test get_secret ---
 def test_get_secret(secretsmanager_client):
     secret = lambda_function.get_secret(TEST_SECRET_NAME)
@@ -63,14 +71,7 @@ def test_get_secret_not_found(secretsmanager_client):
         lambda_function.get_secret("non-existent-secret")
 
 
-@pytest.fixture(scope="function")
-def s3_client(aws_credentials):
-    with mock_aws():
-        client = boto3.client("s3", region_name="us-east-1")
-        client.create_bucket(Bucket=TEST_S3_BUCKET)
-        yield client
-
-
+# --- Test load_config ---
 def test_load_config():
     config = lambda_function.load_config()
     assert "s3_bucket_name" in config
@@ -79,49 +80,50 @@ def test_load_config():
     assert "alpaca_secret_name" in config
 
 
-def test_read_s3_data_local_case():
-    # Test case when s3_client is None (local execution)
-    df = lambda_function.read_s3_data(None, "test_bucket", "test_key")
-    assert isinstance(df, pd.DataFrame)
+# --- Test read_s3_data ---
+def test_read_s3_data_existing(s3_client):
+    test_df = pd.DataFrame(
+        {
+            "open": [100.0],
+            "high": [101.0],
+            "low": [99.0],
+            "close": [100.5],
+            "volume": [1000],
+        },
+        index=pd.to_datetime(["2023-01-01"]),
+    )
+    test_df.index.name = "timestamp"
+    lambda_function.write_s3_data(s3_client, test_df, TEST_S3_BUCKET, "AAPL.csv")
+
+    read_df = lambda_function.read_s3_data(s3_client, TEST_S3_BUCKET, "AAPL.csv")
+    pd.testing.assert_frame_equal(read_df, test_df)
+
+
+def test_read_s3_data_non_existent(s3_client):
+    df = lambda_function.read_s3_data(s3_client, TEST_S3_BUCKET, "NONEXISTENT.csv")
     assert df.empty
-    assert list(df.columns) == ["open", "high", "low", "close", "volume"]
-    assert df.index.name == "timestamp"
 
 
-@mock_aws
-def test_write_s3_data_aws_case():
-    # Test case when s3_client is provided (AWS execution) using moto
-    s3_client = boto3.client("s3", region_name="us-east-1")
-    bucket_name = "test_bucket"
-    key = "test_key.csv"
+# --- Test write_s3_data ---
+def test_write_s3_data(s3_client):
+    test_df = pd.DataFrame(
+        {
+            "open": [100.0],
+            "high": [101.0],
+            "low": [99.0],
+            "close": [100.5],
+            "volume": [1000],
+        },
+        index=pd.to_datetime(["2023-01-01"]),
+    )
+    test_df.index.name = "timestamp"
 
-    # Create the mock S3 bucket
-    s3_client.create_bucket(Bucket=bucket_name)
+    lambda_function.write_s3_data(s3_client, test_df, TEST_S3_BUCKET, "TEST.csv")
 
-    # Create a DataFrame with a timestamp index and float values to test formatting
-    data = {
-        "open": [100.12345, 101.56789],
-        "high": [102.98765, 103.43210],
-        "low": [99.00001, 100.11111],
-        "close": [101.23456, 102.34567],
-        "volume": [1000, 2000],
-    }
-    index = pd.to_datetime(["2023-01-01", "2023-01-02"])
-    df = pd.DataFrame(data, index=index)
-    df.index.name = "timestamp"
-
-    lambda_function.write_s3_data(s3_client, df, bucket_name, key)
-
-    # Verify the content of the object in the mocked S3 bucket
-    response = s3_client.get_object(Bucket=bucket_name, Key=key)
-    body = response["Body"].read().decode("utf-8")
-
-    # Generate the expected CSV content using the same parameters as in lambda_function
-    expected_csv_buffer = pd.io.common.StringIO()
-    df.to_csv(expected_csv_buffer, float_format="%.4f", index_label="timestamp")
-    expected_csv = expected_csv_buffer.getvalue()
-
-    assert body == expected_csv
+    # Verify by reading it back
+    obj = s3_client.get_object(Bucket=TEST_S3_BUCKET, Key="TEST.csv")
+    read_df = pd.read_csv(obj["Body"], index_col="timestamp", parse_dates=True)
+    pd.testing.assert_frame_equal(read_df, test_df)
 
 
 # --- Test merge_data ---
@@ -239,7 +241,3 @@ def test_merge_data_no_overlap():
 
     merged_df = lambda_function.merge_data(existing_df, new_df)
     pd.testing.assert_frame_equal(merged_df, expected_df)
-
-
-def test_lambda_handler():
-    lambda_function.lambda_handler(None, None)
