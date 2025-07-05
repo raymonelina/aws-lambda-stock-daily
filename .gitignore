@@ -29,8 +29,5 @@ dist/
 .Trashes
 Thumbs.db
 
-# uv specific
-uv.lock
-
 # Local secrets
 *.secrets
