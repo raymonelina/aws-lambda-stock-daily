@@ -1,4 +1,6 @@
 import pandas as pd
+import boto3
+from moto import mock_aws
 
 from aws_lambda_alpaca_daily import lambda_function
 
@@ -30,10 +32,40 @@ def test_read_s3_data_local_case():
     assert df.index.name == "timestamp"
 
 
-def test_write_s3_data():
-    # The function body is currently empty, so we can pass None for the client.
-    df = pd.DataFrame({"col1": [1, 2], "col2": [3, 4]})
-    lambda_function.write_s3_data(None, df, "bucket", "key")
+@mock_aws
+def test_write_s3_data_aws_case():
+    # Test case when s3_client is provided (AWS execution) using moto
+    s3_client = boto3.client("s3", region_name="us-east-1")
+    bucket_name = "test_bucket"
+    key = "test_key.csv"
+
+    # Create the mock S3 bucket
+    s3_client.create_bucket(Bucket=bucket_name)
+
+    # Create a DataFrame with a timestamp index and float values to test formatting
+    data = {
+        "open": [100.12345, 101.56789],
+        "high": [102.98765, 103.43210],
+        "low": [99.00001, 100.11111],
+        "close": [101.23456, 102.34567],
+        "volume": [1000, 2000],
+    }
+    index = pd.to_datetime(["2023-01-01", "2023-01-02"])
+    df = pd.DataFrame(data, index=index)
+    df.index.name = "timestamp"
+
+    lambda_function.write_s3_data(s3_client, df, bucket_name, key)
+
+    # Verify the content of the object in the mocked S3 bucket
+    response = s3_client.get_object(Bucket=bucket_name, Key=key)
+    body = response["Body"].read().decode("utf-8")
+
+    # Generate the expected CSV content using the same parameters as in lambda_function
+    expected_csv_buffer = pd.io.common.StringIO()
+    df.to_csv(expected_csv_buffer, float_format="%.4f", index_label="timestamp")
+    expected_csv = expected_csv_buffer.getvalue()
+
+    assert body == expected_csv
 
 
 def test_merge_data():

@@ -84,7 +84,27 @@ def read_s3_data(s3_client, bucket_name, key):
 
 
 def write_s3_data(s3_client, df, bucket_name, key):
-    logger.info("write_s3_data started.")
+    """Writes DataFrame to S3 or prints to console if s3_client is None."""
+    if s3_client is None:
+        # Local testing: print DataFrame, bucket_name, and key to console
+        logger.info(
+            f"Running locally, simulating S3 write for s3://{bucket_name}/{key}. Data:"
+        )
+        print(f"Bucket: {bucket_name}")
+        print(f"Key: {key}")
+        print("DataFrame Content:")
+        print(df.to_csv(index=False))  # Print as CSV for readability
+        return
+
+    try:
+        # AWS Lambda execution: write to S3
+        csv_buffer = pd.io.common.StringIO()
+        df.to_csv(csv_buffer, float_format="%.4f", index_label="timestamp")
+        s3_client.put_object(Bucket=bucket_name, Key=key, Body=csv_buffer.getvalue())
+        logger.info(f"Successfully wrote data to s3://{bucket_name}/{key}")
+    except Exception as e:
+        logger.error(f"Error writing data for {key} to S3: {e}")
+        raise
 
 
 def merge_data(existing_df, new_df):
