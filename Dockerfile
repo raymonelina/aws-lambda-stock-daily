@@ -40,11 +40,11 @@ RUN pip install uv
 # layer will only be rebuilt if these files change.
 COPY pyproject.toml uv.lock ./
 
-# Install Python dependencies using uv.
-RUN uv sync
-
 # Copy the application source code into the container.
 COPY src/ ./src/
+
+# Install Python dependencies using uv.
+RUN uv sync
 
 # ------------------------------------------------------------------------------
 # Lambda Execution
