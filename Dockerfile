@@ -1,14 +1,20 @@
 # ------------------------------------------------------------------------------
 # Base Image
 # ------------------------------------------------------------------------------
-# Use the official AWS Lambda Python 3.11 base image, which includes the
-# Lambda Runtime Interface Client (RIC).
+# Use the official AWS Lambda Python 3.11 image as the foundation.
+# This image includes the Lambda Runtime Interface Client (RIC) and other essentials
+# for running Python functions on AWS Lambda.
 FROM public.ecr.aws/lambda/python:3.11
 
+# Set the working directory within the container. ${LAMBDA_TASK_ROOT} is a
+# standard environment variable in AWS Lambda execution environments.
+WORKDIR ${LAMBDA_TASK_ROOT}
+
 # ------------------------------------------------------------------------------
-# System Dependencies & Build Tools
+# System-Level Dependencies
 # ------------------------------------------------------------------------------
-# Install tools required for building Python packages (like NumPy) from source.
+# Install build tools and libraries required for compiling Python packages from
+# source. This is necessary for packages like NumPy that have C extensions.
 RUN yum update -y && \
     yum install -y \
       gcc \
@@ -22,33 +28,35 @@ RUN yum update -y && \
       cmake \
       pkgconf-pkg-config
 
-# Set environment variable to help build tools find the OpenBLAS libraries.
-# This is often required for scientific computing packages.
+# Configure the environment to ensure that build tools can locate the OpenBLAS
+# libraries, which provide optimized linear algebra computations.
 ENV PKG_CONFIG_PATH=/usr/lib64/pkgconfig
 
 # ------------------------------------------------------------------------------
-# Application Setup
+# Python Application Dependencies
 # ------------------------------------------------------------------------------
-# Set the working directory inside the container.
-WORKDIR /app
-
-# Install uv, a fast Python package installer.
+# Install 'uv', a fast Python package installer, to speed up dependency installation.
 RUN pip install uv
 
-# Copy dependency definition files.
-# This is done separately to leverage Docker's layer caching. The dependencies
-# layer will only be rebuilt if these files change.
-COPY pyproject.toml uv.lock ./
+# Copy the requirements file first to leverage Docker's layer caching.
+# The following dependency installation step will only be re-run if this file changes.
+COPY requirements.txt .
 
-# Copy the application source code into the container.
+# Upgrade pip and install the Python dependencies specified in requirements.txt.
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt
+
+# ------------------------------------------------------------------------------
+# Application Code
+# ------------------------------------------------------------------------------
+# Copy the application source code, tests, and configuration into the container.
 COPY src/ ./src/
-
-# Install Python dependencies using uv.
-RUN uv sync
+COPY tests/ ./tests/
+COPY config/config.json ./config/config.json
 
 # ------------------------------------------------------------------------------
-# Lambda Execution
+# Lambda Execution Configuration
 # ------------------------------------------------------------------------------
-# Set the default command to run the Lambda handler.
-# The base image's entrypoint will execute this handler.
+# Specify the default command to execute the Lambda function handler.
+# The base image's entrypoint will invoke this handler when the Lambda is triggered.
 CMD ["src.aws_lambda_alpaca_daily.lambda_function.lambda_handler"]
