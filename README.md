@@ -131,21 +131,21 @@ Create a secret to securely store your Alpaca API keys.
 **Action:** Ensure the secret name (`alpaca-api-credentials`) matches the `alpaca_secret_name` in `config/config.json`.
 
 ### Step 4: Create an IAM Role for the Lambda Function
-The Lambda function needs permissions to access other AWS services. Create an IAM role and attach the necessary policies. The role needs permissions for S3, Secrets Manager, ECR, and CloudWatch Logs.
+The Lambda function needs permissions to access other AWS services.
 
-*(Detailed policy JSON and `create-role` commands would be provided here in a real-world scenario. For brevity, we'll summarize.)*
-
-**Action:** Create an IAM role with, at minimum, the following permissions:
+**Action:** Create an IAM role named `lambda-stock-daily-role` with, at minimum, the following permissions:
 - `s3:GetObject`, `s3:PutObject`, `s3:ListBucket` on the target S3 bucket.
 - `secretsmanager:GetSecretValue` on the Alpaca credentials secret.
 - `ecr:GetDownloadUrlForLayer`, `ecr:BatchGetImage`, `ecr:BatchCheckLayerAvailability`.
 - `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents`.
 
+*(Detailed policy JSON and `create-role` commands would be provided here in a real-world scenario. For brevity, we'll summarize.)*
+
 ### Step 5: Create an Amazon ECR Repository
 Create a private ECR repository to host your Docker image.
 
 ```bash
-aws ecr create-repository --repository-name aws-lambda-stock-daily --image-scanning-configuration scanOnPush=true
+aws ecr create-repository --repository-name zdomain --image-scanning-configuration scanOnPush=true
 ```
 
 ### Step 6: Build and Push the Docker Image to ECR
@@ -158,12 +158,12 @@ Now, build the local image and push it to the ECR repository you just created.
 
 2.  **Tag the local image with the ECR repository URI:**
     ```bash
-    docker tag aws-lambda-stock-daily:latest <your-aws-account-id>.dkr.ecr.<your-region>.amazonaws.com/aws-lambda-stock-daily:latest
+    docker tag aws-lambda-stock-daily:latest <your-aws-account-id>.dkr.ecr.<your-region>.amazonaws.com/zdomain:latest
     ```
 
 3.  **Push the image to ECR:**
     ```bash
-    docker push <your-aws-account-id>.dkr.ecr.<your-region>.amazonaws.com/aws-lambda-stock-daily:latest
+    docker push <your-aws-account-id>.dkr.ecr.<your-region>.amazonaws.com/zdomain:latest
     ```
     *(Replace `<your-aws-account-id>` and `<your-region>` with your specific values.)*
 
@@ -173,8 +173,8 @@ Create the Lambda function from the container image in ECR.
 **Action:** In the AWS Lambda console or using the AWS CLI:
 - Choose "Create function" and select "Container image".
 - **Function name:** `aws-lambda-stock-daily`
-- **Container image URI:** Browse for the ECR image you pushed.
-- **Execution role:** Attach the IAM role you created in Step 4.
+- **Container image URI:** Browse for the ECR image you pushed from the `zdomain` repository.
+- **Execution role:** Attach the `lambda-stock-daily-role` you created in Step 4.
 - Adjust **Timeout** and **Memory** settings as needed (e.g., 30 seconds, 256 MB).
 
 ### Step 8: Schedule the Function with Amazon EventBridge
@@ -211,5 +211,5 @@ This command mounts your local AWS credentials (`~/.aws`) into the container, al
 With the container running, open a new terminal and send a request to invoke the function:
 
 ```bash
-curl -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" -d '{}'
+curl -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" -d '''{}'''
 ```
