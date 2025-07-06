@@ -61,8 +61,19 @@ uv sync
 
 ### Running the Function Locally
 
-For local testing, you can execute the `lambda_function.py` script directly. This will simulate the Lambda environment and use local files for secrets and data storage.
+For local testing, you can execute the `lambda_function.py` script directly. This simulates the Lambda environment and uses local files for secrets and data storage.
 
+Before running, you must create a `config/alpaca.secrets` file with your Alpaca API credentials:
+
+```json
+{
+    "ALPACA_API_KEY_ID": "YOUR_API_KEY_ID",
+    "ALPACA_API_SECRET_KEY": "YOUR_SECRET_KEY"
+}
+```
+*Note: This file is listed in `.gitignore` and should not be committed to version control.*
+
+Then, execute the script:
 ```bash
 uv run python src/aws_lambda_alpaca_daily/lambda_function.py
 ```
