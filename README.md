@@ -45,7 +45,7 @@ Your Alpaca API credentials should be stored in AWS Secrets Manager with the fol
 }
 ```
 
-## Development
+## Local Development
 
 ### Dependency Management
 
@@ -57,7 +57,7 @@ To install dependencies for local development and testing:
 uv sync
 ```
 
-### Running Locally
+### Running the Function Locally
 
 For local testing, you can execute the `lambda_function.py` script directly. This will simulate the Lambda environment and use local files for secrets and data storage.
 
@@ -65,7 +65,7 @@ For local testing, you can execute the `lambda_function.py` script directly. Thi
 uv run python src/aws_lambda_alpaca_daily/lambda_function.py
 ```
 
-## Testing
+### Running Tests
 
 Unit and integration tests are located in the `tests/` directory. `pytest` is used as the test runner.
 
@@ -75,9 +75,41 @@ To run the tests:
 uv run pytest
 ```
 
-## Build & Deploy
+## Building and Testing the Docker Image Locally
 
-This Lambda function is deployed as a container image.
+This section describes how to build the Docker image and test it on your local machine.
+
+### 1. Build the Docker Image
+
+The `build_docker_image.sh` script automates the process of building the Docker image.
+
+```bash
+./build_docker_image.sh
+```
+
+### 2. Run the Docker Container
+
+Once the image is built, run the container with the following command:
+
+```bash
+docker run -p 9000:8080 -v ~/.aws:/root/.aws aws-lambda-stock-daily:latest
+```
+This command does the following:
+- Runs the `aws-lambda-stock-daily:latest` image.
+- Maps port 9000 on your local machine to port 8080 inside the container (the default port for the Lambda Runtime Interface Emulator).
+- Mounts your local AWS credentials (`~/.aws`) into the container at `/root/.aws`. This allows the Lambda function inside the container to use your local AWS credentials to access services like S3 and Secrets Manager.
+
+### 3. Invoke the Function
+
+With the container running, open a new terminal and send a request to invoke the function:
+
+```bash
+curl -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" -d '''{}'''
+```
+
+## AWS Deployment
+
+This section covers deploying the containerized Lambda function to AWS.
 
 ### Prerequisites
 
@@ -94,15 +126,25 @@ The Lambda function's IAM role will require the following permissions:
 *   Permissions to pull images from Amazon ECR (`ecr:GetDownloadUrlForLayer`, `ecr:BatchGetImage`, `ecr:BatchCheckLayerAvailability`)
 *   Logging permissions for CloudWatch Logs (`logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents`)
 
-### Build and Push Container Image
+### Push Container Image to ECR
 
-The `build_docker_image.sh` script automates the process of building the Docker image.
+After building the image locally, you will need to tag it and push it to your Amazon ECR repository.
 
-```bash
-./build_docker_image.sh
-```
+1.  **Authenticate Docker to your ECR registry:**
+    ```bash
+    aws ecr get-login-password --region <your-region> | docker login --username AWS --password-stdin <your-aws-account-id>.dkr.ecr.<your-region>.amazonaws.com
+    ```
 
-After building the image, you will need to manually tag and push it to your ECR repository.
+2.  **Tag the image:**
+    ```bash
+    docker tag aws-lambda-stock-daily:latest <your-aws-account-id>.dkr.ecr.<your-region>.amazonaws.com/<your-ecr-repo-name>:latest
+    ```
+
+3.  **Push the image to ECR:**
+    ```bash
+    docker push <your-aws-account-id>.dkr.ecr.<your-region>.amazonaws.com/<your-ecr-repo-name>:latest
+    ```
+    *(Replace `<your-aws-account-id>`, `<your-region>`, and `<your-ecr-repo-name>` with your specific values.)*
 
 ### Lambda Configuration
 
@@ -126,6 +168,7 @@ To trigger the Lambda function on a daily schedule, create an Amazon EventBridge
 1.  Create and configure an S3 bucket for storing stock data.
 2.  Create a secret in AWS Secrets Manager for your Alpaca API credentials.
 3.  Create an IAM role for the Lambda function with the necessary least-privilege permissions.
-4.  Build and push the Docker image to Amazon ECR.
-5.  Create and configure the AWS Lambda function using the container image.
-6.  Create an Amazon EventBridge rule to schedule the Lambda function's execution.
+4.  Create an Amazon ECR repository.
+5.  Build and push the Docker image to Amazon ECR.
+6.  Create and configure the AWS Lambda function using the container image.
+7.  Create an Amazon EventBridge rule to schedule the Lambda function's execution.
