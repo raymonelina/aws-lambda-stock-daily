@@ -16,18 +16,18 @@ Then, run pytest from the root directory:
 uv run pytest
 ```
 
-## Building Docker Image
-
-To build the Docker image, run the `build_docker_image.sh` script:
-
-```bash
-./build_docker_image.sh
-```
-
 ## Running Locally
 
 To execute the `main()` function within the Lambda handler for local testing, run the following command:
 
 ```bash
 uv run python src/aws_lambda_alpaca_daily/lambda_function.py
+```
+
+## Building Docker Image
+
+To build the Docker image, run the `build_docker_image.sh` script:
+
+```bash
+./build_docker_image.sh
 ```
