@@ -36,6 +36,10 @@ def get_secret(aws_secret_name):
                 SecretId=aws_secret_name
             )
             if "SecretString" in get_secret_value_response:
+                logger.info(
+                    f"Successfully retrieved secret '{aws_secret_name}' from AWS Secrets Manager."
+                )
+
                 return json.loads(get_secret_value_response["SecretString"])
             else:
                 # For binary secrets, you'd handle SecretBinary
@@ -114,6 +118,7 @@ def read_s3_data(s3_client, bucket_name, key):
     try:
         obj = s3_client.get_object(Bucket=bucket_name, Key=key)
         df = pd.read_csv(obj["Body"], index_col="timestamp", parse_dates=True)
+        logger.info(f"Successfully read data from s3://{bucket_name}/{key}")
         return df
     except s3_client.exceptions.NoSuchKey:
         logger.info(
@@ -194,6 +199,14 @@ def lambda_handler(event, context):
         if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") is None
         else boto3.client("s3")
     )
+    if s3_client is None:
+        logger.info(
+            "Running in local testing mode. AWS_LAMBDA_FUNCTION_NAME not found in os.environ. S3 client is not initialized."
+        )
+    else:
+        logger.info(
+            "Running in AWS Lambda environment. AWS_LAMBDA_FUNCTION_NAME  found in os.environ. S3 client initialized."
+        )
 
     end_date = datetime.now().date()
     start_date = end_date - timedelta(days=days_to_fetch)

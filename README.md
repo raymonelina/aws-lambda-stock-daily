@@ -1,33 +1,131 @@
-# AWS Lambda Stock Daily
+# AWS Lambda Stock Daily Data Fetcher
 
-This project contains an AWS Lambda function for fetching daily stock data.
+This project provides an AWS Lambda function that automatically fetches daily historical stock price data from the Alpaca API and stores it in a designated Amazon S3 bucket. The function is designed to be triggered on a schedule by Amazon EventBridge. It reads a JSON configuration file to determine which stock symbols to track, how many days of historical data to retrieve, and the S3 bucket for storage.
 
-## Running Tests
+A key feature of this function is its ability to merge new data with existing historical data in S3. This ensures a continuous, deduplicated, and sorted dataset for each stock symbol, preventing data gaps and redundant entries.
 
-To run the unit tests, first ensure you have the project dependencies installed by synchronizing your virtual environment:
+## Project Structure
+
+```
+.
+├── src/
+│   └── aws_lambda_alpaca_daily/
+│       └── lambda_function.py
+├── config/
+│   └── config.json
+├── tests/
+│   └── test_lambda_function.py
+├── pyproject.toml
+├── Dockerfile
+├── build_docker_image.sh
+└── README.md
+```
+
+## Configuration
+
+Create a `config/config.json` file with the following structure:
+
+```json
+{
+  "s3_bucket_name": "your-s3-bucket-name",
+  "stocks": ["AAPL", "GOOGL"],
+  "days_to_fetch": 1000,
+  "alpaca_secret_name": "alpaca-api-credentials"
+}
+```
+
+### Alpaca Secret Format in AWS Secrets Manager
+
+Your Alpaca API credentials should be stored in AWS Secrets Manager with the following JSON format:
+
+```json
+{
+  "ALPACA_API_KEY_ID": "your_key_id",
+  "ALPACA_API_SECRET_KEY": "your_secret_key"
+}
+```
+
+## Development
+
+### Dependency Management
+
+This project uses `uv` for dependency management. Dependencies are defined in `pyproject.toml`.
+
+To install dependencies for local development and testing:
 
 ```bash
 uv sync
 ```
 
-Then, run pytest from the root directory:
+### Running Locally
 
-```bash
-uv run pytest
-```
-
-## Running Locally
-
-To execute the `main()` function within the Lambda handler for local testing, run the following command:
+For local testing, you can execute the `lambda_function.py` script directly. This will simulate the Lambda environment and use local files for secrets and data storage.
 
 ```bash
 uv run python src/aws_lambda_alpaca_daily/lambda_function.py
 ```
 
-## Building Docker Image
+## Testing
 
-To build the Docker image, run the `build_docker_image.sh` script:
+Unit and integration tests are located in the `tests/` directory. `pytest` is used as the test runner.
+
+To run the tests:
+
+```bash
+uv run pytest
+```
+
+## Build & Deploy
+
+This Lambda function is deployed as a container image.
+
+### Prerequisites
+
+*   AWS CLI configured with appropriate permissions.
+*   Docker installed.
+*   An Amazon ECR repository created to store your Docker image.
+
+### IAM Role Requirements
+
+The Lambda function's IAM role will require the following permissions:
+
+*   Read/Write access to the specified S3 bucket (`s3:GetObject`, `s3:PutObject`, `s3:ListBucket`)
+*   Read access to the specified secret in AWS Secrets Manager (`secretsmanager:GetSecretValue`)
+*   Permissions to pull images from Amazon ECR (`ecr:GetDownloadUrlForLayer`, `ecr:BatchGetImage`, `ecr:BatchCheckLayerAvailability`)
+*   Logging permissions for CloudWatch Logs (`logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents`)
+
+### Build and Push Container Image
+
+The `build_docker_image.sh` script automates the process of building the Docker image.
 
 ```bash
 ./build_docker_image.sh
 ```
+
+After building the image, you will need to manually tag and push it to your ECR repository.
+
+### Lambda Configuration
+
+After pushing the image to ECR, you can create or update your Lambda function in the AWS Management Console or via AWS CLI/CloudFormation:
+
+*   **Runtime**: Container Image
+*   **Image URI**: Specify the ECR image URI (e.g., `your_aws_account_id.dkr.ecr.your_region.amazonaws.com/your-repo-name:latest`)
+*   **Timeout**: Adjust based on the number of stocks and `days_to_fetch` (e.g., 30 seconds or more).
+*   **Memory**: Start with 256 MB and adjust based on performance.
+*   **Execution Role**: Assign the IAM role with the necessary permissions as described above.
+
+### EventBridge Rule
+
+To trigger the Lambda function on a daily schedule, create an Amazon EventBridge (CloudWatch Events) rule:
+
+*   **Rule type**: Schedule
+*   **Target**: Your Lambda function.
+
+## AWS Setup Checklist
+
+1.  Create and configure an S3 bucket for storing stock data.
+2.  Create a secret in AWS Secrets Manager for your Alpaca API credentials.
+3.  Create an IAM role for the Lambda function with the necessary least-privilege permissions.
+4.  Build and push the Docker image to Amazon ECR.
+5.  Create and configure the AWS Lambda function using the container image.
+6.  Create an Amazon EventBridge rule to schedule the Lambda function's execution.
