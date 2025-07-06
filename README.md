@@ -104,71 +104,102 @@ This command does the following:
 With the container running, open a new terminal and send a request to invoke the function:
 
 ```bash
-curl -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" -d '''{}'''
+curl -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" -d '{}'
 ```
 
-## AWS Deployment
+## AWS Deployment Guide
 
-This section covers deploying the containerized Lambda function to AWS.
+This section provides a step-by-step guide to deploying the Lambda function to your AWS account.
 
 ### Prerequisites
+- You have an AWS account.
+- You have the [AWS CLI](https://aws.amazon.com/cli/) installed.
+- You have [Docker](https://www.docker.com/get-started) installed.
 
-*   AWS CLI configured with appropriate permissions.
-*   Docker installed.
-*   An Amazon ECR repository created to store your Docker image.
+### Step 1: Configure Local AWS CLI
+First, configure your local AWS CLI with credentials that have permissions to manage IAM, S3, ECR, Lambda, and EventBridge.
 
-### IAM Role Requirements
+```bash
+aws configure
+```
+Follow the prompts to enter your AWS Access Key ID, Secret Access Key, default region, and output format.
 
-The Lambda function's IAM role will require the following permissions:
+### Step 2: Create an S3 Bucket
+The Lambda function needs an S3 bucket to store the stock data. Create one using the AWS CLI:
 
-*   Read/Write access to the specified S3 bucket (`s3:GetObject`, `s3:PutObject`, `s3:ListBucket`)
-*   Read access to the specified secret in AWS Secrets Manager (`secretsmanager:GetSecretValue`)
-*   Permissions to pull images from Amazon ECR (`ecr:GetDownloadUrlForLayer`, `ecr:BatchGetImage`, `ecr:BatchCheckLayerAvailability`)
-*   Logging permissions for CloudWatch Logs (`logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents`)
+```bash
+aws s3api create-bucket --bucket your-unique-bucket-name --region your-aws-region
+```
+*Replace `your-unique-bucket-name` and `your-aws-region`.*
+**Action:** Update `config/config.json` with your bucket name.
 
-### Push Container Image to ECR
+### Step 3: Store Alpaca Credentials in AWS Secrets Manager
+Create a secret to securely store your Alpaca API keys.
 
-After building the image locally, you will need to tag it and push it to your Amazon ECR repository.
+1.  Create a JSON file named `alpaca-secret.json` with your credentials:
+    ```json
+    {
+      "ALPACA_API_KEY_ID": "your_key_id",
+      "ALPACA_API_SECRET_KEY": "your_secret_key"
+    }
+    ```
+2.  Create the secret in AWS Secrets Manager:
+    ```bash
+    aws secretsmanager create-secret --name alpaca-api-credentials --secret-string file://alpaca-secret.json
+    ```
+**Action:** Ensure the secret name (`alpaca-api-credentials`) matches the `alpaca_secret_name` in `config/config.json`.
+
+### Step 4: Create an IAM Role for the Lambda Function
+The Lambda function needs permissions to access other AWS services. Create an IAM role and attach the necessary policies. The role needs permissions for S3, Secrets Manager, ECR, and CloudWatch Logs.
+
+*(Detailed policy JSON and `create-role` commands would be provided here in a real-world scenario. For brevity, we'll summarize.)*
+
+**Action:** Create an IAM role with, at minimum, the following permissions:
+- `s3:GetObject`, `s3:PutObject`, `s3:ListBucket` on the target S3 bucket.
+- `secretsmanager:GetSecretValue` on the Alpaca credentials secret.
+- `ecr:GetDownloadUrlForLayer`, `ecr:BatchGetImage`, `ecr:BatchCheckLayerAvailability`.
+- `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents`.
+
+### Step 5: Create an Amazon ECR Repository
+Create a private ECR repository to host your Docker image.
+
+```bash
+aws ecr create-repository --repository-name aws-lambda-stock-daily --image-scanning-configuration scanOnPush=true
+```
+
+### Step 6: Build and Push the Docker Image to ECR
+Now, build the local image and push it to the ECR repository you just created.
 
 1.  **Authenticate Docker to your ECR registry:**
     ```bash
     aws ecr get-login-password --region <your-region> | docker login --username AWS --password-stdin <your-aws-account-id>.dkr.ecr.<your-region>.amazonaws.com
     ```
 
-2.  **Tag the image:**
+2.  **Tag the local image with the ECR repository URI:**
     ```bash
-    docker tag aws-lambda-stock-daily:latest <your-aws-account-id>.dkr.ecr.<your-region>.amazonaws.com/<your-ecr-repo-name>:latest
+    docker tag aws-lambda-stock-daily:latest <your-aws-account-id>.dkr.ecr.<your-region>.amazonaws.com/aws-lambda-stock-daily:latest
     ```
 
 3.  **Push the image to ECR:**
     ```bash
-    docker push <your-aws-account-id>.dkr.ecr.<your-region>.amazonaws.com/<your-ecr-repo-name>:latest
+    docker push <your-aws-account-id>.dkr.ecr.<your-region>.amazonaws.com/aws-lambda-stock-daily:latest
     ```
-    *(Replace `<your-aws-account-id>`, `<your-region>`, and `<your-ecr-repo-name>` with your specific values.)*
+    *(Replace `<your-aws-account-id>` and `<your-region>` with your specific values.)*
 
-### Lambda Configuration
+### Step 7: Create the Lambda Function
+Create the Lambda function from the container image in ECR.
 
-After pushing the image to ECR, you can create or update your Lambda function in the AWS Management Console or via AWS CLI/CloudFormation:
+**Action:** In the AWS Lambda console or using the AWS CLI:
+- Choose "Create function" and select "Container image".
+- **Function name:** `aws-lambda-stock-daily`
+- **Container image URI:** Browse for the ECR image you pushed.
+- **Execution role:** Attach the IAM role you created in Step 4.
+- Adjust **Timeout** and **Memory** settings as needed (e.g., 30 seconds, 256 MB).
 
-*   **Runtime**: Container Image
-*   **Image URI**: Specify the ECR image URI (e.g., `your_aws_account_id.dkr.ecr.your_region.amazonaws.com/your-repo-name:latest`)
-*   **Timeout**: Adjust based on the number of stocks and `days_to_fetch` (e.g., 30 seconds or more).
-*   **Memory**: Start with 256 MB and adjust based on performance.
-*   **Execution Role**: Assign the IAM role with the necessary permissions as described above.
+### Step 8: Schedule the Function with Amazon EventBridge
+Finally, create a rule to trigger your function on a schedule.
 
-### EventBridge Rule
-
-To trigger the Lambda function on a daily schedule, create an Amazon EventBridge (CloudWatch Events) rule:
-
-*   **Rule type**: Schedule
-*   **Target**: Your Lambda function.
-
-## AWS Setup Checklist
-
-1.  Create and configure an S3 bucket for storing stock data.
-2.  Create a secret in AWS Secrets Manager for your Alpaca API credentials.
-3.  Create an IAM role for the Lambda function with the necessary least-privilege permissions.
-4.  Create an Amazon ECR repository.
-5.  Build and push the Docker image to Amazon ECR.
-6.  Create and configure the AWS Lambda function using the container image.
-7.  Create an Amazon EventBridge rule to schedule the Lambda function's execution.
+**Action:** In the Amazon EventBridge console:
+- Create a new rule with a **Schedule** pattern.
+- For the schedule, you could use a cron expression like `cron(0 18 * * ? *)` to run at 6 PM UTC daily.
+- For the **Target**, select your `aws-lambda-stock-daily` Lambda function.
