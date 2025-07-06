@@ -47,6 +47,8 @@ Your Alpaca API credentials should be stored in AWS Secrets Manager with the fol
 
 ## Local Development
 
+This section covers running the function and tests on your local machine without Docker.
+
 ### Dependency Management
 
 This project uses `uv` for dependency management. Dependencies are defined in `pyproject.toml`.
@@ -73,38 +75,6 @@ To run the tests:
 
 ```bash
 uv run pytest
-```
-
-## Building and Testing the Docker Image Locally
-
-This section describes how to build the Docker image and test it on your local machine.
-
-### 1. Build the Docker Image
-
-The `build_docker_image.sh` script automates the process of building the Docker image.
-
-```bash
-./build_docker_image.sh
-```
-
-### 2. Run the Docker Container
-
-Once the image is built, run the container with the following command:
-
-```bash
-docker run -p 9000:8080 -v ~/.aws:/root/.aws aws-lambda-stock-daily:latest
-```
-This command does the following:
-- Runs the `aws-lambda-stock-daily:latest` image.
-- Maps port 9000 on your local machine to port 8080 inside the container (the default port for the Lambda Runtime Interface Emulator).
-- Mounts your local AWS credentials (`~/.aws`) into the container at `/root/.aws`. This allows the Lambda function inside the container to use your local AWS credentials to access services like S3 and Secrets Manager.
-
-### 3. Invoke the Function
-
-With the container running, open a new terminal and send a request to invoke the function:
-
-```bash
-curl -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" -d '{}'
 ```
 
 ## AWS Deployment Guide
@@ -203,3 +173,32 @@ Finally, create a rule to trigger your function on a schedule.
 - Create a new rule with a **Schedule** pattern.
 - For the schedule, you could use a cron expression like `cron(0 18 * * ? *)` to run at 6 PM UTC daily.
 - For the **Target**, select your `aws-lambda-stock-daily` Lambda function.
+
+## Advanced: Testing with a Local Docker Container
+
+After setting up your AWS resources (Steps 1-3 in the deployment guide), you can test the function inside a local Docker container that connects to your live AWS account for secrets and S3 storage.
+
+### 1. Build the Docker Image
+
+The `build_docker_image.sh` script automates the process of building the Docker image.
+
+```bash
+./build_docker_image.sh
+```
+
+### 2. Run the Docker Container
+
+Once the image is built, run the container with the following command:
+
+```bash
+docker run -p 9000:8080 -v ~/.aws:/root/.aws aws-lambda-stock-daily:latest
+```
+This command mounts your local AWS credentials (`~/.aws`) into the container, allowing the function to interact with your AWS resources.
+
+### 3. Invoke the Function
+
+With the container running, open a new terminal and send a request to invoke the function:
+
+```bash
+curl -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" -d '{}'
+```
