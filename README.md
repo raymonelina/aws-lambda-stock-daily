@@ -15,3 +15,11 @@ Then, run pytest from the root directory:
 ```bash
 uv run pytest
 ```
+
+## Building Docker Image
+
+To build the Docker image, run the `build_docker_image.sh` script:
+
+```bash
+./build_docker_image.sh
+```
