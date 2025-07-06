@@ -1,31 +1,54 @@
-# Base image
-FROM amazonlinux:2023
+# ------------------------------------------------------------------------------
+# Base Image
+# ------------------------------------------------------------------------------
+# Use the official AWS Lambda Python 3.11 base image, which includes the
+# Lambda Runtime Interface Client (RIC).
+FROM public.ecr.aws/lambda/python:3.11
 
-# Install Python 3.11, build tools, OpenBLAS, and pkg-config
+# ------------------------------------------------------------------------------
+# System Dependencies & Build Tools
+# ------------------------------------------------------------------------------
+# Install tools required for building Python packages (like NumPy) from source.
 RUN yum update -y && \
     yum install -y \
-      python3.11 python3.11-devel \
-      gcc gcc-c++ make git \
-      openblas openblas-devel blas blas-devel \
-      cmake pkgconf-pkg-config && \
-    alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
-    python3 -m ensurepip && \
-    pip3 install --upgrade pip uv
+      gcc \
+      gcc-c++ \
+      make \
+      git \
+      openblas \
+      openblas-devel \
+      blas \
+      blas-devel \
+      cmake \
+      pkgconf-pkg-config
 
-# Ensure meson can find OpenBLAS
+# Set environment variable to help build tools find the OpenBLAS libraries.
+# This is often required for scientific computing packages.
 ENV PKG_CONFIG_PATH=/usr/lib64/pkgconfig
 
-# Set working directory
+# ------------------------------------------------------------------------------
+# Application Setup
+# ------------------------------------------------------------------------------
+# Set the working directory inside the container.
 WORKDIR /app
 
-# Copy dependency files first (use Docker layer cache)
+# Install uv, a fast Python package installer.
+RUN pip install uv
+
+# Copy dependency definition files.
+# This is done separately to leverage Docker's layer caching. The dependencies
+# layer will only be rebuilt if these files change.
 COPY pyproject.toml uv.lock ./
 
-# Install deps with uv (NumPy builds with OpenBLAS)
+# Install Python dependencies using uv.
 RUN uv sync
 
-# Copy the rest of your code
+# Copy the application source code into the container.
 COPY src/ ./src/
 
-# Default command
-CMD ["python3", "src/aws_lambda_alpaca_daily/lambda_function.py"]
+# ------------------------------------------------------------------------------
+# Lambda Execution
+# ------------------------------------------------------------------------------
+# Set the default command to run the Lambda handler.
+# The base image's entrypoint will execute this handler.
+CMD ["src.aws_lambda_alpaca_daily.lambda_function.lambda_handler"]
