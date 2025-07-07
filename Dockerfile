@@ -42,21 +42,22 @@ RUN pip install uv
 # The following dependency installation step will only be re-run if this file changes.
 COPY requirements.txt .
 
-# Upgrade pip and install the Python dependencies specified in requirements.txt.
+# Install dependencies into the directory AWS Lambda uses at runtime
 RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+    pip install -r requirements.txt --target "${LAMBDA_TASK_ROOT}"
 
 # ------------------------------------------------------------------------------
 # Application Code
 # ------------------------------------------------------------------------------
-# Copy the application source code, tests, and configuration into the container.
-COPY src/ ./src/
-COPY tests/ ./tests/
-COPY config/config.json ./config/config.json
+# Copy application source code into Lambda's working directory
+COPY src/ ${LAMBDA_TASK_ROOT}/
+
+# Copy configuration file (ensure path matches runtime expectations)
+COPY config/config.json ${LAMBDA_TASK_ROOT}/config/config.json
 
 # ------------------------------------------------------------------------------
 # Lambda Execution Configuration
 # ------------------------------------------------------------------------------
 # Specify the default command to execute the Lambda function handler.
 # The base image's entrypoint will invoke this handler when the Lambda is triggered.
-CMD ["src.aws_lambda_alpaca_daily.lambda_function.lambda_handler"]
+CMD ["aws_lambda_alpaca_daily.lambda_function.lambda_handler"]
