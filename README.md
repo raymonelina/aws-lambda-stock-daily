@@ -158,12 +158,12 @@ Now, build the local image and push it to the ECR repository you just created.
 
 2.  **Tag the local image with the ECR repository URI:**
     ```bash
-    docker tag aws-lambda-stock-daily:latest <your-aws-account-id>.dkr.ecr.<your-region>.amazonaws.com/zdomain:latest
+    docker tag aws-lambda-stock-daily:latest <your-aws-account-id>.dkr.ecr.<your-region>.amazonaws.com/aws-lambda-stock-daily:latest
     ```
 
 3.  **Push the image to ECR:**
     ```bash
-    docker push <your-aws-account-id>.dkr.ecr.<your-region>.amazonaws.com/zdomain:latest
+    docker push <your-aws-account-id>.dkr.ecr.<your-region>.amazonaws.com/aws-lambda-stock-daily:latest
     ```
     *(Replace `<your-aws-account-id>` and `<your-region>` with your specific values.)*
 

@@ -1,11 +1,11 @@
 #!/bin/bash
 
 IMAGE_NAME="aws-lambda-stock-daily"
-TAG="latest"
+TAG="2025-07-06"
 
 echo "Building Docker image: ${IMAGE_NAME}:${TAG}"
 
-docker build -t ${IMAGE_NAME}:${TAG} .
+docker buildx build --platform=linux/amd64 --output type=docker -t ${IMAGE_NAME}:${TAG} .
 
 if [ $? -eq 0 ]; then
   echo "Docker image built successfully: ${IMAGE_NAME}:${TAG}"
