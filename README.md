@@ -148,8 +148,10 @@ Create a private ECR repository to host your Docker image.
 aws ecr create-repository --repository-name zdomain --image-scanning-configuration scanOnPush=true
 ```
 
-### Step 6: Build and Push the Docker Image to ECR
-The `build_docker_image.sh` script automates building the Docker image and pushing it to the pre-configured Amazon ECR repository.
+### Step 6: Build and Push the Docker Image
+The `build_docker_image.sh` script automates the entire build process. It performs two actions:
+1.  Builds and pushes a production-ready image to your Amazon ECR repository, tagged with the current date (e.g., `2025-07-08`).
+2.  Builds a separate image tagged as `local-aws-lambda-stock-daily:debug` and loads it into your local Docker daemon for testing purposes.
 
 1.  **Authenticate Docker to your ECR registry:**
     Before running the script, ensure Docker is authenticated with Amazon ECR.
@@ -158,12 +160,12 @@ The `build_docker_image.sh` script automates building the Docker image and pushi
     ```
     *(This command assumes your ECR repository is in `us-west-2`. Update the region if necessary.)*
 
-2.  **Execute the build and push script:**
-    This script tags the image with the current date (e.g., `2025-07-07`) and pushes it to ECR.
+2.  **Execute the build script:**
+    This single command handles both the deployment push and the local build.
     ```bash
     ./build_docker_image.sh
     ```
-    Upon success, the script will inspect the pushed image in ECR to confirm the push.
+    Upon success, the script will confirm that the image has been pushed to ECR and that the local testing image is available.
 
 ### Step 7: Create the Lambda Function
 Create the Lambda function from the container image in ECR.
@@ -185,15 +187,9 @@ Finally, create a rule to trigger your function on a schedule.
 
 ## Advanced: Testing with a Local Docker Container
 
-This section explains how to test the function in a local Docker container that connects to your live AWS account for secrets and S3 storage. This is useful for verifying the function's behavior before deploying it.
+This section explains how to test the function in a local Docker container that connects to your live AWS account for secrets and S3 storage. The `./build_docker_image.sh` script (described in Step 6) has already created the necessary local image (`local-aws-lambda-stock-daily:debug`) for this purpose.
 
-### 1. Build the Local Docker Image
-First, build a local version of the Docker image. This image will not be pushed to ECR.
-```bash
-docker build -t aws-lambda-stock-daily:latest .
-```
-
-### 2. Run the Docker Container
+### 1. Run the Docker Container
 Run the container, mounting your local AWS credentials as a read-only volume. This allows the function inside the container to securely interact with your AWS resources (like S3 and Secrets Manager).
 ```bash
 docker run --rm -p 9000:8080 -v ~/.aws:/root/.aws:ro local-aws-lambda-stock-daily:debug
@@ -202,7 +198,7 @@ docker run --rm -p 9000:8080 -v ~/.aws:/root/.aws:ro local-aws-lambda-stock-dail
 - `-p 9000:8080`: Maps port 9000 on your host to port 8080 in the container.
 - `-v ~/.aws:/root/.aws:ro`: Mounts your AWS credentials read-only.
 
-### 3. Invoke the Function
+### 2. Invoke the Function
 With the container running, open a new terminal and send a test invocation request using `curl`:
 ```bash
 curl -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" -d '{}'
