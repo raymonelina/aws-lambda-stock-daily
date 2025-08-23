@@ -175,8 +175,38 @@ def merge_data(existing_df, new_df):
     return combined_df.sort_index()
 
 
+def send_status_email(is_eventbridge_trigger, subject, body):
+    """Sends status email if triggered by EventBridge, otherwise logs the message."""
+    if is_eventbridge_trigger:
+        try:
+            ses = boto3.client('ses', region_name='us-west-2')
+            response = ses.send_email(
+                Source='zhurunzhang@gmail.com',
+                Destination={'ToAddresses': ['zhurunzhang@gmail.com']},
+                Message={
+                    'Subject': {'Data': subject},
+                    'Body': {'Text': {'Data': body}}
+                }
+            )
+            logger.info(f"Email sent successfully: {subject}")
+            return response
+        except Exception as e:
+            logger.error(f"Failed to send email: {e}")
+    else:
+        logger.info(f"[SIMULATED EMAIL] Subject: {subject}")
+        logger.info(f"[SIMULATED EMAIL] Body: {body}")
+
+
 def lambda_handler(event, context):
     logger.info("lambda_handler started.")
+    
+    # Detect trigger source
+    if event and event.get("source") == "aws.events":
+        logger.info("Triggered by EventBridge (scheduled)")
+    elif not event:
+        logger.info("Triggered manually (test)")
+    else:
+        logger.info(f"Triggered by: {event.get('source', 'unknown') if event else 'unknown'}")
 
     # Load configuration
     config = load_config()
@@ -235,10 +265,18 @@ def lambda_handler(event, context):
         # 4. Write updated data back to S3
         try:
             write_s3_data(s3_client, merged_data, s3_bucket_name, s3_key)
-            logger.info(f"Successfully updated data for {symbol}.")
+            logger.info(f"Successfully updated data for {symbol}.\n\n")
         except Exception as e:
-            logger.error(f"Failed to write updated data for {symbol}: {e}")
+            logger.error(f"Failed to write updated data for {symbol}: {e}\n\n")
 
+    # Send status email
+    is_eventbridge = event and event.get("source") == "aws.events"
+    send_status_email(
+        is_eventbridge,
+        "AWS Lambda Stock Daily - Processing Complete",
+        f"Stock data processing completed successfully for symbols: {', '.join(stocks_to_fetch)}"
+    )
+    
     logger.info("Lambda function finished.")
     return {"statusCode": 200, "body": "Stock data processing complete."}
 

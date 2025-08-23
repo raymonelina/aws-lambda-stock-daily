@@ -56,27 +56,53 @@ This project uses `uv` for dependency management. Dependencies are defined in `p
 To install dependencies for local development and testing:
 
 ```bash
-uv sync
+uv sync                # Install main dependencies
+uv sync --group test   # Install test dependencies (includes pytest)
+uv sync --group dev    # Install development dependencies (includes black)
 ```
+
+#### Generating requirements.txt for Docker
+
+The Docker build requires `requirements.txt`. Generate it from `pyproject.toml`:
+
+```bash
+uv pip compile pyproject.toml -o requirements.txt
+```
+
+This creates a `requirements.txt` with only main dependencies (excludes test/dev groups) and pinned versions for reproducible Docker builds.
 
 ### Running the Function Locally
 
-For local testing, you can execute the `lambda_function.py` script directly. This simulates the Lambda environment and uses local files for secrets and data storage.
+For local testing, the function simulates AWS services using local files:
+- **Secrets**: Uses `config/alpaca.secrets` file instead of AWS Secrets Manager
+- **Storage**: Uses `local_bucket/` directory instead of S3
 
-Before running, you must create a `config/alpaca.secrets` file with your Alpaca API credentials:
+**Required Setup:**
+1. Create `config/alpaca.secrets` file with your Alpaca API credentials
+2. The function will automatically create the `local_bucket/` directory during execution
 
+#### Local Secrets Configuration
+
+**Create `config/alpaca.secrets`:**
 ```json
 {
-    "ALPACA_API_KEY_ID": "YOUR_API_KEY_ID",
-    "ALPACA_API_SECRET_KEY": "YOUR_SECRET_KEY"
+    "ALPACA_API_KEY_ID": "your_key_id",
+    "ALPACA_API_SECRET_KEY": "your_secret_key"
 }
 ```
-*Note: This file is listed in `.gitignore` and should not be committed to version control.*
 
-Then, execute the script:
+*Note: This file is listed in `.gitignore` and should not be committed to version control. Replace the example values with your actual Alpaca API credentials.*
+
+#### Execute Locally
 ```bash
 uv run python src/aws_lambda_alpaca_daily/lambda_function.py
 ```
+
+During execution, the function will:
+- Read credentials from `config/alpaca.secrets`
+- Create `local_bucket/` directory automatically
+- Save CSV files locally (e.g., `local_bucket/AAPL.csv`)
+- Print data summaries to console for verification
 
 ### Running Tests
 
@@ -149,23 +175,30 @@ aws ecr create-repository --repository-name zdomain --image-scanning-configurati
 ```
 
 ### Step 6: Build and Push the Docker Image
-The `build_docker_image.sh` script automates the entire build process. It performs two actions:
-1.  Builds and pushes a production-ready image to your Amazon ECR repository, tagged with the current date (e.g., `2025-07-08`).
-2.  Builds a separate image tagged as `local-aws-lambda-stock-daily:debug` and loads it into your local Docker daemon for testing purposes.
+The `build_docker_image.sh` script supports two build modes:
+1.  **Local-only build**: Creates a local testing image without pushing to ECR
+2.  **Push-only build**: Builds and pushes to ECR for Lambda deployment
 
-1.  **Authenticate Docker to your ECR registry:**
-    Before running the script, ensure Docker is authenticated with Amazon ECR.
-    ```bash
-    aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 140023403573.dkr.ecr.us-west-2.amazonaws.com
-    ```
-    *(This command assumes your ECR repository is in `us-west-2`. Update the region if necessary.)*
+**Prerequisites:** Ensure Docker Desktop is running before executing any build commands.
 
-2.  **Execute the build script:**
-    This single command handles both the deployment push and the local build.
+1.  **For local testing only:**
     ```bash
     ./build_docker_image.sh
     ```
-    Upon success, the script will confirm that the image has been pushed to ECR and that the local testing image is available.
+    This creates `local-aws-lambda-stock-daily:debug` for local Docker testing.
+
+2.  **For ECR deployment:**
+    First, authenticate Docker to your ECR registry:
+    ```bash
+    aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 140023403573.dkr.ecr.us-west-2.amazonaws.com
+    ```
+    *(Update the region if necessary.)*
+    
+    Then build and push:
+    ```bash
+    ./build_docker_image.sh --push
+    ```
+    This builds and pushes a production-ready image tagged with the current date (e.g., `2025-07-08`).
 
 ### Step 7: Create the Lambda Function
 Create the Lambda function from the container image in ECR.
@@ -185,9 +218,17 @@ Finally, create a rule to trigger your function on a schedule.
 - For the schedule, you could use a cron expression like `cron(0 18 * * ? *)` to run at 6 PM UTC daily.
 - For the **Target**, select your `aws-lambda-stock-daily` Lambda function.
 
+### Monitoring and Logs
+When deployed to AWS, the Lambda function logs are automatically sent to **AWS CloudWatch Logs**:
+- **Log group**: `/aws/lambda/aws-lambda-stock-daily` (matches your function name)
+- **Access**: AWS Console → CloudWatch → Log groups
+- **CLI access**: `aws logs describe-log-streams --log-group-name /aws/lambda/aws-lambda-stock-daily`
+
 ## Advanced: Testing with a Local Docker Container
 
-This section explains how to test the function in a local Docker container that connects to your live AWS account for secrets and S3 storage. The `./build_docker_image.sh` script (described in Step 6) has already created the necessary local image (`local-aws-lambda-stock-daily:debug`) for this purpose.
+This section explains how to test the function in a local Docker container that connects to your live AWS account for secrets and S3 storage. First, build the local testing image using `./build_docker_image.sh` (without `--push` flag) to create the `local-aws-lambda-stock-daily:debug` image.
+
+**Prerequisites:** Ensure Docker Desktop is running.
 
 ### 1. Run the Docker Container
 Run the container, mounting your local AWS credentials as a read-only volume. This allows the function inside the container to securely interact with your AWS resources (like S3 and Secrets Manager).
@@ -204,3 +245,6 @@ With the container running, open a new terminal and send a test invocation reque
 curl -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" -d '{}'
 ```
 If successful, the function will execute, fetch data from Alpaca, and store it in your S3 bucket. Check the container logs and your S3 bucket to verify the results.
+
+### 3. Stop the Container
+To gracefully stop the Docker container, press `Ctrl+C` in the terminal where the container is running. The `--rm` flag will automatically remove the container when it exits.
