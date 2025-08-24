@@ -1,6 +1,6 @@
 {
   "s3_bucket_name": "aws-lambda-stock-daily",
   "stocks": ["AAPL", "GOOGL", "TQQQ", "UVXY", "SPY"],
-  "days_to_fetch": 1000,
+  "days_to_fetch": 1500,
   "alpaca_secret_name": "alpaca-api-credentials"
 }

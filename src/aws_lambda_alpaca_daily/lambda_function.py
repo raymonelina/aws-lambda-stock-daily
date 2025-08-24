@@ -2,12 +2,20 @@ import json
 import logging
 import os
 import boto3
-import pandas as pd
-
 from datetime import datetime, timedelta
-from alpaca.data.requests import StockBarsRequest
-from alpaca.data.timeframe import TimeFrame
-from alpaca.data.historical import StockHistoricalDataClient
+
+try:
+    from .storage import get_s3_client, read_data, write_data
+    from .csv_utils import merge_data
+    from .data_sources import AlpacaDataSource
+    from .feature_extractors import FeatureExtractor
+    from .email_utils import send_status_email
+except ImportError:
+    from storage import get_s3_client, read_data, write_data
+    from csv_utils import merge_data
+    from data_sources import AlpacaDataSource
+    from feature_extractors import FeatureExtractor
+    from email_utils import send_status_email
 
 # Configure logging
 logger = logging.getLogger()
@@ -62,139 +70,7 @@ def load_config(config_path="config/config.json"):
         raise
 
 
-def fetch_alpaca_data(api_key, secret_key, symbol, start_date, end_date):
-    """Fetches historical stock data from Alpaca API."""
-    try:
-        data_client = StockHistoricalDataClient(api_key, secret_key)
-        request_params = StockBarsRequest(
-            symbol_or_symbols=[symbol],
-            timeframe=TimeFrame.Day,
-            start=start_date,
-            end=end_date,
-        )
-        bars = data_client.get_stock_bars(request_params)
 
-        if bars and bars.data and symbol in bars.data:
-            df = bars.df.loc[symbol]
-            # Alpaca returns data with timezone, convert to naive datetime for consistency
-            df.index = df.index.tz_convert("UTC")
-            df = df[["open", "high", "low", "close", "volume"]]
-            df.index.name = "timestamp"
-            return df
-        return pd.DataFrame()
-    except Exception as e:
-        logger.error(f"Error fetching Alpaca data for {symbol}: {e}")
-        return pd.DataFrame()
-
-
-def _get_local_file_path(key):
-    local_dir = "local_bucket"
-    os.makedirs(local_dir, exist_ok=True)
-    return os.path.join(local_dir, key)
-
-
-def read_s3_data(s3_client, bucket_name, key):
-    """Reads existing CSV data from S3 or a local file. If s3_client is None, it tries to read from a local file first."""
-    if s3_client is None:
-        # Local testing: try to read from local_bucket/key first
-        local_file_path = _get_local_file_path(key)
-        if os.path.exists(local_file_path):
-            try:
-                df = pd.read_csv(
-                    local_file_path, index_col="timestamp", parse_dates=True
-                )
-                logger.info(f"Local: Data read from {local_file_path}")
-                return df
-            except Exception as e:
-                logger.error(f"Local: Error reading data from {local_file_path}: {e}")
-        logger.info(
-            "Local: No existing data found or error reading local file. Returning empty DataFrame."
-        )
-        return pd.DataFrame(
-            columns=["open", "high", "low", "close", "volume"],
-            index=pd.Index([], name="timestamp"),
-        )
-
-    try:
-        obj = s3_client.get_object(Bucket=bucket_name, Key=key)
-        df = pd.read_csv(obj["Body"], index_col="timestamp", parse_dates=True)
-        logger.info(f"Successfully read data from s3://{bucket_name}/{key}")
-        return df
-    except s3_client.exceptions.NoSuchKey:
-        logger.info(
-            f"No existing data found for {key} in {bucket_name}. Starting fresh."
-        )
-        return pd.DataFrame()
-    except Exception as e:
-        logger.error(f"Error reading S3 data for {key}: {e}")
-        return pd.DataFrame()
-
-
-def write_s3_data(s3_client, df, bucket_name, key):
-    """Writes DataFrame to S3, local file, or prints to console based on s3_client."""
-    if s3_client is None:
-        # Local testing: write DataFrame to a local file and print tail to console
-        local_file_path = _get_local_file_path(key)
-
-        try:
-            # Write DataFrame to CSV with specified format
-            df.to_csv(local_file_path, float_format="%.4f", index_label="timestamp")
-            logger.info(f"Local: Data written to {local_file_path}")  # More concise log
-        except Exception as e:
-            logger.error(f"Local: Error writing data to {local_file_path}: {e}")
-
-        logger.info(
-            f"Local: Simulating S3 write for s3://{bucket_name}/{key}. Data tail (5 rows) printed below."
-        )
-        print(f"Bucket: {bucket_name}")
-        print(f"Key: {key}")
-        print("DataFrame Content Tail (5 rows):")
-        print(df.tail(5).to_csv(index=True))  # Print tail as CSV for readability
-        return
-
-    try:
-        # AWS Lambda execution: write to S3
-        csv_buffer = pd.io.common.StringIO()
-        df.to_csv(csv_buffer, float_format="%.4f", index_label="timestamp")
-        s3_client.put_object(Bucket=bucket_name, Key=key, Body=csv_buffer.getvalue())
-        logger.info(f"Successfully wrote data to s3://{bucket_name}/{key}")
-    except Exception as e:
-        logger.error(f"Error writing data for {key} to S3: {e}")
-        raise
-
-
-def merge_data(existing_df, new_df):
-    """Merges new data with existing data, deduplicates, and sorts."""
-    if existing_df.empty:
-        return new_df.sort_index()
-    if new_df.empty:
-        return existing_df.sort_index()
-
-    combined_df = pd.concat([existing_df, new_df])
-    combined_df = combined_df[~combined_df.index.duplicated(keep="last")]
-    return combined_df.sort_index()
-
-
-def send_status_email(is_eventbridge_trigger, subject, body):
-    """Sends status email if triggered by EventBridge, otherwise logs the message."""
-    if is_eventbridge_trigger:
-        try:
-            ses = boto3.client('ses', region_name='us-west-2')
-            response = ses.send_email(
-                Source='zhurunzhang@gmail.com',
-                Destination={'ToAddresses': ['zhurunzhang@gmail.com']},
-                Message={
-                    'Subject': {'Data': subject},
-                    'Body': {'Text': {'Data': body}}
-                }
-            )
-            logger.info(f"Email sent successfully: {subject}")
-            return response
-        except Exception as e:
-            logger.error(f"Failed to send email: {e}")
-    else:
-        logger.info(f"[SIMULATED EMAIL] Subject: {subject}")
-        logger.info(f"[SIMULATED EMAIL] Body: {body}")
 
 
 def lambda_handler(event, context):
@@ -215,28 +91,22 @@ def lambda_handler(event, context):
     days_to_fetch = config["days_to_fetch"]
     alpaca_secret_name = config["alpaca_secret_name"]
 
-    # Fetch Alpaca API credentials
+    # Initialize data source and storage
     try:
         alpaca_secrets = get_secret(alpaca_secret_name)
-        alpaca_api_key = alpaca_secrets["ALPACA_API_KEY_ID"]
-        alpaca_secret_key = alpaca_secrets["ALPACA_API_SECRET_KEY"]
+        data_source = AlpacaDataSource(
+            alpaca_secrets["ALPACA_API_KEY_ID"],
+            alpaca_secrets["ALPACA_API_SECRET_KEY"]
+        )
     except Exception as e:
         logger.critical(f"Failed to retrieve Alpaca API credentials: {e}")
         return {"statusCode": 500, "body": "Failed to retrieve API credentials."}
 
-    s3_client = (
-        None
-        if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") is None
-        else boto3.client("s3")
-    )
+    s3_client = get_s3_client()
     if s3_client is None:
-        logger.info(
-            "Running in local testing mode. AWS_LAMBDA_FUNCTION_NAME not found in os.environ. S3 client is not initialized."
-        )
+        logger.info("Running in local testing mode.")
     else:
-        logger.info(
-            "Running in AWS Lambda environment. AWS_LAMBDA_FUNCTION_NAME  found in os.environ. S3 client initialized."
-        )
+        logger.info("Running in AWS Lambda environment.")
 
     end_date = datetime.now().date()
     start_date = end_date - timedelta(days=days_to_fetch)
@@ -245,29 +115,37 @@ def lambda_handler(event, context):
         logger.info(f"Processing stock: {symbol}")
         s3_key = f"{symbol}.csv"
 
-        # 1. Read existing data from S3
-        existing_data = read_s3_data(s3_client, s3_bucket_name, s3_key)
+        # 1. Read existing data
+        existing_data = read_data(s3_client, s3_bucket_name, s3_key)
 
-        # 2. Fetch new data from Alpaca
-        new_data = fetch_alpaca_data(
-            alpaca_api_key, alpaca_secret_key, symbol, start_date, end_date
-        )
+        # 2. Fetch new data from data source
+        new_data = data_source.fetch_data(symbol, start_date, end_date)
 
         if new_data.empty:
-            logger.warning(
-                f"No new data fetched for {symbol}. Skipping merge and write."
-            )
+            logger.warning(f"No new data fetched for {symbol}. Skipping merge and write.")
             continue
 
         # 3. Merge, deduplicate, and sort
         merged_data = merge_data(existing_data, new_data)
 
-        # 4. Write updated data back to S3
+        # 4. Write updated data back
         try:
-            write_s3_data(s3_client, merged_data, s3_bucket_name, s3_key)
-            logger.info(f"Successfully updated data for {symbol}.\n\n")
+            write_data(s3_client, merged_data, s3_bucket_name, s3_key)
+            logger.info(f"Successfully updated data for {symbol}.")
         except Exception as e:
-            logger.error(f"Failed to write updated data for {symbol}: {e}\n\n")
+            logger.error(f"Failed to write updated data for {symbol}: {e}")
+    
+    # 5. Extract features
+    try:
+        input_files = [f"{symbol}.csv" for symbol in stocks_to_fetch]
+        
+        # Extract all features using single extractor
+        extractor = FeatureExtractor(['moving_averages', 'technical_indicators', 'price_changes'])
+        extractor.extract_features(input_files, "features_all.csv", s3_client, s3_bucket_name)
+        
+        logger.info("Feature extraction completed")
+    except Exception as e:
+        logger.error(f"Feature extraction failed: {e}")
 
     # Send status email
     is_eventbridge = event and event.get("source") == "aws.events"
